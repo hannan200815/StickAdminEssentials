@@ -1,1 +1,8 @@
-
+# Items listed here are banned. Use Bukkit material names, e.g. NETHERITE_SWORD.
+banned-items: []
+# How often (seconds) to remove banned items from inventories
+scan-seconds: 2
+# Remove banned items lying on the ground
+remove-ground-items: true
+# Tell players when an action is blocked
+notify-on-block: true

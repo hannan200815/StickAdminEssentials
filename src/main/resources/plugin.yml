@@ -1,1 +1,30 @@
-
+name: StickAdminEssentials
+version: 0.1.0
+main: com.stickadmin.StickAdminEssentials
+api-version: '1.21'
+author: StickmanSMP
+description: Ban any item from being picked up, dropped, crafted, placed, eaten or used.
+commands:
+  banitem:
+    description: Ban an item
+    usage: /banitem [item|hand]
+    permission: stickadmin.admin
+  unbanitem:
+    description: Unban an item
+    usage: /unbanitem [item|hand]
+    permission: stickadmin.admin
+  banlist:
+    description: Show banned items
+    usage: /banlist
+    permission: stickadmin.admin
+  stickadmin:
+    description: Reload or scan
+    usage: /stickadmin reload|scan
+    permission: stickadmin.admin
+permissions:
+  stickadmin.admin:
+    description: Manage banned items
+    default: op
+  stickadmin.bypass:
+    description: Ignore item bans
+    default: op
