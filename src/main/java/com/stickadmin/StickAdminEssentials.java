@@ -27,6 +27,8 @@ import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.meta.BlockStateMeta;
+import org.bukkit.block.ShulkerBox;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
@@ -48,7 +50,7 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
             getCommand(name).setExecutor(this);
             getCommand(name).setTabCompleter(this);
         }
-        long seconds = Math.max(1, getConfig().getLong("scan-seconds", 2));
+        long seconds = Math.max(1, getConfig().getLong("scan-seconds", 1));
         Bukkit.getScheduler().runTaskTimer(this, this::scan, 40L, 20L * seconds);
         getLogger().info("StickAdminEssentials loaded " + banned.size() + " banned items.");
     }
@@ -77,7 +79,7 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
     }
 
     private boolean exempt(Player p) {
-        return p.hasPermission("stickadmin.bypass");
+        return false; // banned items apply to everyone, including operators
     }
 
     private void notifyBlocked(Player p, ItemStack it) {
@@ -87,41 +89,64 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
     }
 
     private static String pretty(Material m) {
-        return m.name().toLowerCase(Locale.ROOT).replace('_', ' ');
+        StringBuilder sb = new StringBuilder();
+        for (String word : m.name().toLowerCase(Locale.ROOT).split("_")) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return sb.toString();
     }
 
     // ---------- Periodic cleanup ----------
 
+    /** Removes banned items from an array, including inside shulker boxes. Returns how many were removed. */
+    private int purge(ItemStack[] items, List<String> found) {
+        int changed = 0;
+        for (int i = 0; i < items.length; i++) {
+            ItemStack it = items[i];
+            if (it == null || it.getType().isAir()) continue;
+            if (banned.contains(it.getType())) {
+                found.add(pretty(it.getType()));
+                items[i] = null;
+                changed++;
+                continue;
+            }
+            if (it.getItemMeta() instanceof BlockStateMeta bsm && bsm.getBlockState() instanceof ShulkerBox sb) {
+                ItemStack[] inside = sb.getInventory().getContents();
+                int inner = purge(inside, found);
+                if (inner > 0) {
+                    sb.getInventory().setContents(inside);
+                    bsm.setBlockState(sb);
+                    it.setItemMeta(bsm);
+                    changed += inner;
+                }
+            }
+        }
+        return changed;
+    }
+
     private void scan() {
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (exempt(p)) continue;
-            int removed = 0;
+            List<String> found = new ArrayList<>();
             PlayerInventory inv = p.getInventory();
 
             ItemStack[] contents = inv.getContents();
-            for (int i = 0; i < contents.length; i++) {
-                if (isBanned(contents[i])) { contents[i] = null; removed++; }
-            }
-            inv.setContents(contents);
+            if (purge(contents, found) > 0) inv.setContents(contents);
 
             ItemStack[] armor = inv.getArmorContents();
-            for (int i = 0; i < armor.length; i++) {
-                if (isBanned(armor[i])) { armor[i] = null; removed++; }
-            }
-            inv.setArmorContents(armor);
+            if (purge(armor, found) > 0) inv.setArmorContents(armor);
 
-            if (isBanned(inv.getItemInOffHand())) { inv.setItemInOffHand(null); removed++; }
-            if (isBanned(p.getItemOnCursor())) { p.setItemOnCursor(null); removed++; }
+            ItemStack[] off = {inv.getItemInOffHand()};
+            if (purge(off, found) > 0) inv.setItemInOffHand(off[0]);
+
+            ItemStack[] cursor = {p.getItemOnCursor()};
+            if (purge(cursor, found) > 0) p.setItemOnCursor(cursor[0]);
 
             ItemStack[] ender = p.getEnderChest().getContents();
-            boolean enderChanged = false;
-            for (int i = 0; i < ender.length; i++) {
-                if (isBanned(ender[i])) { ender[i] = null; removed++; enderChanged = true; }
-            }
-            if (enderChanged) p.getEnderChest().setContents(ender);
+            if (purge(ender, found) > 0) p.getEnderChest().setContents(ender);
 
-            if (removed > 0) {
-                p.sendMessage(ChatColor.RED + "Removed " + removed + " banned item stack(s) from your inventory.");
+            for (String name : found) {
+                p.sendMessage(ChatColor.RED + "" + ChatColor.BOLD + name + " is not allowed on this server. It has been deleted.");
             }
         }
         if (getConfig().getBoolean("remove-ground-items", true)) {
