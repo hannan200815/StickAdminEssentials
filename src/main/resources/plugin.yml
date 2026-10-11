@@ -21,6 +21,10 @@ commands:
     description: Reload or scan
     usage: /stickadmin reload|scan
     permission: stickadmin.admin
+  chest:
+    description: Find containers holding an item
+    usage: /chest lookup <item>
+    permission: stickadmin.admin
 permissions:
   stickadmin.admin:
     description: Manage banned items
