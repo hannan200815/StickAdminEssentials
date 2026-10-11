@@ -1,6 +1,7 @@
 package com.stickadmin;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -28,6 +29,8 @@ import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.BlockStateMeta;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.Container;
 import org.bukkit.block.ShulkerBox;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -46,7 +49,7 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
         saveDefaultConfig();
         loadBans();
         getServer().getPluginManager().registerEvents(this, this);
-        for (String name : List.of("banitem", "unbanitem", "banlist", "stickadmin")) {
+        for (String name : List.of("banitem", "unbanitem", "banlist", "stickadmin", "chest")) {
             getCommand(name).setExecutor(this);
             getCommand(name).setTabCompleter(this);
         }
@@ -317,9 +320,68 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
                     }
                 }
             }
+            case "chest" -> {
+                if (!admin(sender)) return true;
+                if (args.length >= 1 && args[0].equalsIgnoreCase("lookup")) {
+                    chestLookup(sender, args);
+                } else {
+                    sender.sendMessage(ChatColor.YELLOW + "/chest lookup <item>" + ChatColor.GRAY + " - find chests, barrels and shulker boxes holding an item");
+                }
+            }
             default -> { }
         }
         return true;
+    }
+
+    /** Counts an item in a list of stacks, including inside shulker boxes. */
+    private int countItem(ItemStack[] items, Material target) {
+        int total = 0;
+        for (ItemStack it : items) {
+            if (it == null || it.getType().isAir()) continue;
+            if (it.getType() == target) total += it.getAmount();
+            if (it.getItemMeta() instanceof BlockStateMeta bsm && bsm.getBlockState() instanceof ShulkerBox sb) {
+                total += countItem(sb.getInventory().getContents(), target);
+            }
+        }
+        return total;
+    }
+
+    private void chestLookup(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(ChatColor.RED + "Usage: /chest lookup <item>");
+            return;
+        }
+        Material target = Material.matchMaterial(args[1]);
+        if (target == null || !target.isItem()) {
+            sender.sendMessage(ChatColor.RED + "Unknown item: " + args[1]);
+            return;
+        }
+        sender.sendMessage(ChatColor.GOLD + "Searching loaded chunks for " + pretty(target) + "...");
+        int containers = 0;
+        int total = 0;
+        for (World w : Bukkit.getWorlds()) {
+            for (Chunk ch : w.getLoadedChunks()) {
+                for (BlockState bs : ch.getTileEntities(false)) {
+                    if (!(bs instanceof Container box)) continue;
+                    int count = countItem(box.getInventory().getContents(), target);
+                    if (count <= 0) continue;
+                    containers++;
+                    total += count;
+                    if (containers <= 25) {
+                        sender.sendMessage(ChatColor.YELLOW + pretty(bs.getType()) + ChatColor.GRAY + " at "
+                                + ChatColor.WHITE + w.getName() + " " + bs.getX() + ", " + bs.getY() + ", " + bs.getZ()
+                                + ChatColor.GRAY + " (" + count + "x)");
+                    }
+                }
+            }
+        }
+        if (containers == 0) {
+            sender.sendMessage(ChatColor.GREEN + "No loaded chests, barrels or shulker boxes hold " + pretty(target) + ".");
+        } else {
+            sender.sendMessage(ChatColor.GOLD + "Found " + total + "x " + pretty(target) + " in " + containers + " container(s)."
+                    + (containers > 25 ? " Showing the first 25." : ""));
+        }
+        sender.sendMessage(ChatColor.GRAY + "Only loaded chunks are searched. Walk near other areas to load them.");
     }
 
     private boolean admin(CommandSender s) {
@@ -354,6 +416,18 @@ public class StickAdminEssentials extends JavaPlugin implements Listener, Comman
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
+        if (cmd.getName().equalsIgnoreCase("chest")) {
+            if (args.length == 1) return List.of("lookup").stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
+            if (args.length == 2 && args[0].equalsIgnoreCase("lookup")) {
+                String prefix = args[1].toUpperCase(Locale.ROOT);
+                List<String> items = new ArrayList<>();
+                for (Material m : Material.values()) {
+                    if (m.isItem() && m.name().startsWith(prefix) && items.size() < 50) items.add(m.name().toLowerCase(Locale.ROOT));
+                }
+                return items;
+            }
+            return List.of();
+        }
         if (args.length != 1) return List.of();
         String prefix = args[0].toUpperCase(Locale.ROOT);
         List<String> out = new ArrayList<>();
